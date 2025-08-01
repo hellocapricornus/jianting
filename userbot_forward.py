@@ -61,6 +61,10 @@ def is_target_message(text: str):
 
 @client.on(events.NewMessage)
 async def handler(event):
+    # 只监听群组消息，排除私聊
+    if not event.is_group:
+        return
+        
     # 不监听转发目标群组消息，避免循环转发
     if event.chat_id == FORWARD_CHAT_ID:
         return
