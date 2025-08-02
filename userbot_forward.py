@@ -2,8 +2,8 @@ from telethon import TelegramClient, events
 import re
 import time
 
-API_ID = 1234567
-API_HASH = "abcd1234efgh5678ijkl9012mnop3456"
+API_ID = 27101904
+API_HASH = "770feb4049c8763f3946bb1aa2e54a86"
 FORWARD_CHAT_ID = -1002741490869
 
 # 关键词
