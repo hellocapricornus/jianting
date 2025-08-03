@@ -77,12 +77,9 @@ async def handler(event):
 
     text = event.message.message
 
-    # 广告屏蔽
-    if is_ad_message(text):
-        return
-
-    # 屏蔽词拦截
+    # 检查消息是否包含屏蔽关键词
     if is_blocked_message(text):
+        await event.delete()  # 删除含有屏蔽词的消息
         return
 
     # 检测关键词
