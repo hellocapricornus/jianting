@@ -43,10 +43,17 @@ BLOCK_KEYWORDS = ["京东", "淘宝", "天猫", "拼多多", "支付宝", "微�
 
 # 防抖缓存
 debounce_cache = {}
-DEBOUNCE_TIME = 60
+DEBOUNCE_TIME = 120  # 2分钟
+CACHE_CLEAN_INTERVAL = 3600  # 1小时
 
 client = TelegramClient("userbot_session", API_ID, API_HASH)
 
+def clean_debounce_cache():
+    """清理1小时以前的防抖缓存"""
+    now = time.time()
+    old_keys = [k for k, v in debounce_cache.items() if now - v > CACHE_CLEAN_INTERVAL]
+    for k in old_keys:
+        debounce_cache.pop(k, None)
 
 def is_ad_message(text: str):
     """广告消息检测"""
@@ -77,6 +84,9 @@ async def handler(event):
         return
 
     text = event.message.message
+
+    # 每次收到消息时清理旧缓存
+    clean_debounce_cache()
 
     # 如果消息包含屏蔽关键词，就直接跳过转发
     if is_blocked_message(text):
