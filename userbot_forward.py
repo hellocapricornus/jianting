@@ -71,7 +71,17 @@ def is_target_message(text: str):
     """关键词检测"""
     return any(k in text for k in FILTER_KEYWORDS + COUNTRIES) or any(re.search(rgx, text) for rgx in FILTER_REGEXES)
 
-
+async def update_current_groups():
+    """启动时获取当前账号所有群组ID，存入 current_group_ids"""
+    global current_group_ids
+    print("🔄 正在更新当前账号所在群组列表...")
+    current_group_ids.clear()
+    async for dialog in client.iter_dialogs():
+        # 只保留群组和超级群
+        if dialog.is_group or dialog.is_channel:
+            current_group_ids.add(dialog.id)
+    print(f"✅ 已缓存 {len(current_group_ids)} 个群组/频道ID")
+    
 @client.on(events.NewMessage)
 async def handler(event):
      # 只监听群组和频道，排除私聊
