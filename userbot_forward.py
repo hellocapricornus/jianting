@@ -6,6 +6,9 @@ API_ID = 27101904
 API_HASH = "770feb4049c8763f3946bb1aa2e54a86"
 FORWARD_CHAT_ID = -1002741490869
 
+# 白名单关键词（命中就直接转发）
+WHITE_KEYWORDS = ["测试", "VIP客户", "重要公告"]  # 你自己改
+
 # 关键词
 FILTER_KEYWORDS = ["精聊", "刷单", "大区", "卡主姓名", "入金金额", "股票", "换汇", "公检法", "盘", "通道", "源头", "进算", "拖算", "滲透", "哈萨克", "无视", "尼日", "料"]
 FILTER_REGEXES = [r".*支付.*群", r".*换汇.*", r".*博彩.*"]
@@ -47,11 +50,15 @@ BLOCK_KEYWORDS = ["京东", "淘宝", "天猫", "拼多多", "支付宝", "微�
 
 # 防抖缓存
 debounce_cache = {}
-DEBOUNCE_TIME = 120  # 2分钟
+DEBOUNCE_TIME = 20  # 20秒
 CACHE_CLEAN_INTERVAL = 3600  # 1小时
 
 client = TelegramClient("userbot_session", API_ID, API_HASH)
 
+def is_white_message(text: str):
+    """白名单检测"""
+    return any(k in text for k in WHITE_KEYWORDS)
+    
 def clean_debounce_cache():
     """清理1小时以前的防抖缓存"""
     now = time.time()
@@ -83,13 +90,13 @@ async def update_current_groups():
         if dialog.is_group or dialog.is_channel:
             current_group_ids.add(dialog.id)
     print(f"✅ 已缓存 {len(current_group_ids)} 个群组/频道ID")
-    
+
 @client.on(events.NewMessage)
 async def handler(event):
      # 只监听群组和频道，排除私聊
     if not (event.is_group or event.is_channel):
         return
-        
+
     # 不监听转发目标群组消息，避免循环转发
     if event.chat_id == FORWARD_CHAT_ID:
         return
@@ -102,6 +109,11 @@ async def handler(event):
     # 每次收到消息时清理旧缓存
     clean_debounce_cache()
 
+    # ==== 白名单检测（优先级最高） ====
+    if is_white_message(text):
+        await forward_message(event, text)
+        return
+        
     # 如果消息包含屏蔽关键词，就直接跳过转发
     if is_blocked_message(text):
         return
@@ -117,43 +129,41 @@ async def handler(event):
         now = time.time()
         msg_key = hash(text)  # 用消息内容做唯一标识
 
-        # 如果该消息在2分钟内已转发过，就跳过
-        #if msg_key in debounce_cache and now - debounce_cache[msg_key] < DEBOUNCE_TIME:
-        #    return
-        #debounce_cache[msg_key] = now
+        # 如果该消息在20秒内已转发过，就跳过
+        if msg_key in debounce_cache and now - debounce_cache[msg_key] < DEBOUNCE_TIME:
+            return
+        debounce_cache[msg_key] = now
 
-        # 获取发送者信息
-        sender = await event.get_sender()
-        try:
-            sender = await client.get_entity(sender.id)
-        except Exception:
-            pass
+        await forward_message(event, text)  # 这里要加上
 
-        chat = await event.get_chat()
-        chat_title = getattr(chat, "title", "私聊")
+async def forward_message(event, text):
+    """封装转发逻辑，避免重复代码"""
+    sender = await event.get_sender()
+    try:
+        sender = await client.get_entity(sender.id)
+    except Exception:
+        pass
 
-        # 群组链接
-        chat_id_str = str(event.chat_id)
-        if chat_id_str.startswith("-100"):
-            tg_chat_id = chat_id_str[4:]
-            chat_link = f"https://t.me/c/{tg_chat_id}"
-        else:
-            chat_link = f"https://t.me/{chat_title.replace(' ', '')}"
+    chat = await event.get_chat()
+    chat_title = getattr(chat, "title", "私聊")
 
-        # 发信人
-        if hasattr(sender, 'username') and sender.username:
-            sender_display = f"{(sender.first_name or '')} [@{sender.username}](https://t.me/{sender.username})".strip()
-        elif sender.first_name or sender.last_name:
-            sender_display = f"{sender.first_name or ''} {sender.last_name or ''}".strip()
-        else:
-            sender_display = f"User{sender.id}"
+    chat_id_str = str(event.chat_id)
+    if chat_id_str.startswith("-100"):
+        tg_chat_id = chat_id_str[4:]
+        chat_link = f"https://t.me/c/{tg_chat_id}"
+    else:
+        chat_link = f"https://t.me/{chat_title.replace(' ', '')}"
 
-        # 转发消息
-        forward_text = f"【[{chat_title}]({chat_link})】\n发信人：{sender_display}\n内容：{text}"
-        await client.send_message(FORWARD_CHAT_ID, forward_text, parse_mode='md', link_preview=False)
+    if hasattr(sender, 'username') and sender.username:
+        sender_display = f"{(sender.first_name or '')} [@{sender.username}](https://t.me/{sender.username})".strip()
+    elif sender.first_name or sender.last_name:
+        sender_display = f"{sender.first_name or ''} {sender.last_name or ''}".strip()
+    else:
+        sender_display = f"User{sender.id}"
 
-
-
+    forward_text = f"【[{chat_title}]({chat_link})】\n发信人：{sender_display}\n内容：{text}"
+    await client.send_message(FORWARD_CHAT_ID, forward_text, parse_mode='md', link_preview=False)
+    
 async def main():
     print("✅ 连接成功，开始监听所有群消息...")
     await client.run_until_disconnected()
