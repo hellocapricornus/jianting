@@ -99,7 +99,13 @@ async def handler(event):
 
     # 每次收到消息时清理旧缓存
     clean_debounce_cache()
+    # 白名单条件
+WHITELIST_KEYWORDS = ["报备", "卡主姓名", "入金金额", "入金模式"]
 
+# 如果命中白名单，直接转发
+if any(k in text for k in WHITELIST_KEYWORDS):
+    await client.send_message(FORWARD_CHAT_ID, text, link_preview=False)
+    return
     # 如果消息包含屏蔽关键词，就直接跳过转发
     if is_blocked_message(text):
         return
