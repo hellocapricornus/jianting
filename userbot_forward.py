@@ -116,9 +116,9 @@ async def handler(event):
         msg_key = hash(text)  # 用消息内容做唯一标识
 
         # 如果该消息在2分钟内已转发过，就跳过
-        if msg_key in debounce_cache and now - debounce_cache[msg_key] < DEBOUNCE_TIME:
-            return
-        debounce_cache[msg_key] = now
+        #if msg_key in debounce_cache and now - debounce_cache[msg_key] < DEBOUNCE_TIME:
+        #    return
+        #debounce_cache[msg_key] = now
 
         # 获取发送者信息
         sender = await event.get_sender()
