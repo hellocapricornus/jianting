@@ -1,10 +1,13 @@
 from telethon import TelegramClient, events
 import re
 import time
+import json
 
 API_ID = 27101904
 API_HASH = "770feb4049c8763f3946bb1aa2e54a86"
 FORWARD_CHAT_ID = -1002741490869
+
+MARKED_FILE = "marked_users.json"
 
 # 白名单关键词（命中就直接转发）
 WHITE_KEYWORDS = ["入金金额", "银行卡号后四位"]  # 你自己改
@@ -136,8 +139,55 @@ async def handler(event):
 
         await forward_message(event, text)  # 这里要加上
 
+
+# ======== 加载标记用户 ========
+try:
+    with open(MARKED_FILE, "r", encoding="utf-8") as f:
+        marked_users = json.load(f)
+except FileNotFoundError:
+    marked_users = {}
+
+def save_marked_users():
+    with open(MARKED_FILE, "w", encoding="utf-8") as f:
+        json.dump(marked_users, f, ensure_ascii=False, indent=2)
+
+# ======== 私聊命令管理标记用户 ========
+@client.on(events.NewMessage(pattern=r'^/mark_id (\d+) (.+)'))
+async def mark_user(event):
+    if not event.is_private:
+        return
+    user_id, remark = event.pattern_match.groups()
+    marked_users[user_id] = remark
+    save_marked_users()
+    await event.reply(f"✅ 已标记用户 {user_id} 为：{remark}")
+
+@client.on(events.NewMessage(pattern=r'^/unmark_id (\d+)'))
+async def unmark_user(event):
+    if not event.is_private:
+        return
+    user_id = event.pattern_match.group(1)
+    if user_id in marked_users:
+        del marked_users[user_id]
+        save_marked_users()
+        await event.reply(f"❌ 已移除标记用户 {user_id}")
+    else:
+        await event.reply(f"⚠️ 用户 {user_id} 不在标记列表")
+
+@client.on(events.NewMessage(pattern=r'^/list_marked'))
+async def list_marked(event):
+    if not event.is_private:
+        return
+    if not marked_users:
+        await event.reply("⚠️ 当前没有标记用户")
+        return
+    text = "📋 标记用户列表：\n"
+    for uid, remark in marked_users.items():
+        text += f"- {uid} ：{remark}\n"
+    await event.reply(text)
+
+# ======== 转发消息时显示标记备注 ========
 async def forward_message(event, text):
-    """封装转发逻辑，避免重复代码"""
+    """封装转发逻辑，自动显示标记备注"""
     sender = await event.get_sender()
     try:
         sender = await client.get_entity(sender.id)
@@ -161,7 +211,12 @@ async def forward_message(event, text):
     else:
         sender_display = f"User{sender.id}"
 
-    forward_text = f"【[{chat_title}]({chat_link})】\n发信人：{sender_display}\n内容：{text}"
+    # ======= 检查标记用户 =======
+    remark_text = ""
+    if str(sender.id) in marked_users:
+        remark_text = f"\n⚠️ 标记用户：{marked_users[str(sender.id)]}"
+
+    forward_text = f"【[{chat_title}]({chat_link})】\n发信人：{sender_display}{remark_text}\n内容：{text}"
     await client.send_message(FORWARD_CHAT_ID, forward_text, parse_mode='md', link_preview=False)
     
 async def main():
