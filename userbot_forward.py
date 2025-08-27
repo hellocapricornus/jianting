@@ -214,9 +214,9 @@ async def forward_message(event, text):
     # ======= 检查标记用户 =======
     remark_text = ""
     if str(sender.id) in marked_users:
-        remark_text = f"\n⚠️ 标记用户：{marked_users[str(sender.id)]}"
+        remark_text = f"\n―――❗️❗️❗️ 标记用户：{marked_users[str(sender.id)]} ❗️❗️❗️―――"
 
-    forward_text = f"【[{chat_title}]({chat_link})】\n发信人：{sender_display}{remark_text}\n内容：{text}"
+    forward_text = f"【[{chat_title}]({chat_link})】\n发信人：{sender_display}\n内容：{text}{remark_text}"
     await client.send_message(FORWARD_CHAT_ID, forward_text, parse_mode='md', link_preview=False)
     
 async def main():
