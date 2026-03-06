@@ -3,6 +3,7 @@ import re
 import time
 import json
 import hashlib
+import asyncio
 
 API_ID = 27101904
 API_HASH = "770feb4049c8763f3946bb1aa2e54a86"
@@ -70,6 +71,8 @@ DEBOUNCE_TIME = 20
 CACHE_EXPIRE = 3600
 
 message_counter = 0
+forward_counter = 0
+start_time = time.time()
 
 client = TelegramClient("userbot_session", API_ID, API_HASH)
 
@@ -164,6 +167,9 @@ async def unmark_user(event):
 # ========= 转发 =========
 async def forward_message(event,text):
 
+    global forward_counter
+    forward_counter += 1
+
     sender = await event.get_sender()
     chat = await event.get_chat()
 
@@ -248,11 +254,85 @@ async def handler(event):
 
     await forward_message(event,text)
 
+
+async def daily_report():
+    global message_counter, forward_counter, start_time
+
+    while True:
+        await asyncio.sleep(86400)  # 24小时
+
+        uptime = int(time.time() - start_time)
+
+        report = f"""
+📊 机器人运行报告
+
+监听消息数：{message_counter}
+转发消息数：{forward_counter}
+
+运行时间：{uptime//3600}小时
+"""
+
+        await client.send_message("me", report)
+
+# ========= 心跳 =========
+async def heartbeat():
+
+    global message_counter, forward_counter, start_time
+
+    while True:
+
+        uptime = int(time.time() - start_time)
+
+        msg = f"""
+💓 心跳检测
+
+状态：运行中
+监听消息：{message_counter}
+转发消息：{forward_counter}
+运行时间：{uptime//3600}小时
+"""
+
+        try:
+            await client.send_message("me", msg)
+        except Exception as e:
+            print("心跳发送失败:", e)
+
+        await asyncio.sleep(600)  # 10分钟
+
 # ========= 启动 =========
 async def main():
-    print("✅ 机器人启动成功")
-    await client.run_until_disconnected()
 
-if __name__=="__main__":
+    while True:
+        try:
+            await client.start()
+
+            print("✅ 机器人启动成功")
+
+            await client.send_message(
+                "me",
+                "🤖 监听机器人已启动\n状态：运行中"
+            )
+
+            # 启动定时任务
+            client.loop.create_task(daily_report())
+            client.loop.create_task(heartbeat())
+
+            await client.run_until_disconnected()
+
+        except Exception as e:
+
+            print("❌ 连接异常:", e)
+
+            try:
+                await client.send_message(
+                    "me",
+                    f"⚠️ 机器人异常\n{e}\n10秒后重连"
+                )
+            except:
+                pass
+
+            await asyncio.sleep(10)
+            
+if __name__ == "__main__":
     with client:
         client.loop.run_until_complete(main())
