@@ -336,59 +336,58 @@ async def forward_message(event,text):
 # ========= 主监听 =========
 @client.on(events.NewMessage)
 async def handler(event):
-
-    # 夜间休眠
+    """主监听：优化过滤顺序，白名单优先转发"""
     if is_sleep_time():
         return
 
-    await asyncio.sleep(random.uniform(1,4))
+    await asyncio.sleep(random.uniform(1, 4))
 
     global message_counter
 
     try:
-
         if not (event.is_group or event.is_channel):
             return
-
         if event.chat_id == FORWARD_CHAT_ID:
             return
-
         if not event.message or not event.message.message:
             return
 
         text = event.message.message.strip()
-
         if not text:
             return
 
-        message_counter+=1
-
-        if message_counter%100==0:
+        message_counter += 1
+        if message_counter % 100 == 0:
             clean_cache()
 
-        if is_white(text):
-            await forward_message(event,text)
-            return
-
+        # —— 高效过滤：先屏蔽广告与垃圾信息 —— #
         if is_block(text):
             return
-
         if is_ad(text):
             return
 
+        # —— 白名单强制转发 —— #
+        if is_white(text):
+            await forward_message(event, text)
+            return
+
+        # —— 关键词 / 国家过滤 —— #
         if not is_target(text):
             return
 
-        if len(text)>300:
+        # —— 长度限制 —— #
+        if len(text) > 300:
             return
 
+        # —— 防抖 —— #
         if is_duplicate(text):
             return
 
-        await forward_message(event,text)
+        # 满足条件，转发
+        await forward_message(event, text)
 
     except Exception as e:
-        print("handler异常:",e)
+        print("handler异常:", e)
 
 # ========= 日报 =========
 async def daily_report():
@@ -442,42 +441,35 @@ async def heartbeat():
         await asyncio.sleep(600)
 
 # ========= 启动 =========
+heartbeat_task = None  # 全局
+
 async def main():
+    global heartbeat_task
 
     while True:
         try:
-
             await client.start()
-
-            # 解决 entity 问题
             await client.get_dialogs()
-
             print("✅ 机器人启动成功")
+            await client.send_message("me", "🤖 监听机器人已启动\n状态：运行中")
 
-            await client.send_message(
-                "me",
-                "🤖 监听机器人已启动\n状态：运行中"
-            )
+            # 只创建一次心跳
+            if heartbeat_task is None or heartbeat_task.done():
+                heartbeat_task = client.loop.create_task(heartbeat())
 
+            # 其他任务
             client.loop.create_task(daily_report())
-            client.loop.create_task(heartbeat())
             client.loop.create_task(github_auto_update())
             client.loop.create_task(simulate_human_offline())
 
             await client.run_until_disconnected()
 
         except Exception as e:
-
             print("❌ 连接异常:", e)
-
             try:
-                await client.send_message(
-                    "me",
-                    f"⚠️ 机器人异常\n{e}\n5秒后重连"
-                )
+                await client.send_message("me", f"⚠️ 机器人异常\n{e}\n5秒后重连")
             except:
                 pass
-
             await asyncio.sleep(5)
 
 if __name__ == "__main__":
