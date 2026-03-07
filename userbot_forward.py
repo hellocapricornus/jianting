@@ -9,13 +9,17 @@ import asyncio
 import os
 import subprocess
 import sys
+import random
 
 API_ID = 27101904
 API_HASH = "770feb4049c8763f3946bb1aa2e54a86"
 
+# ========= 夜间休眠 =========
+SLEEP_START = 3   # 凌晨3点
+SLEEP_END = 8     # 早上8点
+
 # 修改后的转发群ID
 FORWARD_CHAT_ID = -1003878983546
-
 MARKED_FILE = "marked_users.json"
 
 # ========= 白名单 =========
@@ -84,6 +88,23 @@ start_time = time.time()
 client = TelegramClient("userbot_session", API_ID, API_HASH)
 
 # ========= 工具 =========
+# ========= 夜间休眠判断（北京时间） =========
+def is_sleep_time():
+    """
+    判断是否为北京时间夜间休眠时间
+    SLEEP_START 和 SLEEP_END 是北京时间小时（0-23）
+    """
+    # UTC 时间小时
+    utc_hour = time.gmtime().tm_hour
+    # 北京时间 = UTC +8
+    bj_hour = (utc_hour + 8) % 24
+
+    if SLEEP_START < SLEEP_END:
+        return SLEEP_START <= bj_hour < SLEEP_END
+    else:
+        # 跨午夜情况，比如 23 ~ 8 点
+        return bj_hour >= SLEEP_START or bj_hour < SLEEP_END
+    
 def safe_markdown(text):
     if not text:
         return ""
@@ -174,9 +195,44 @@ async def unmark_user(event):
         save_marked()
         await event.reply("❌ 已删除")
 
+# ========= 模拟真人离线 =========
+async def simulate_human_offline():
+
+    while True:
+
+        if is_sleep_time():
+            await asyncio.sleep(600)
+            continue
+
+        # 在线一段时间
+        online_time = random.randint(1800, 5400)  # 30-90分钟
+        print(f"🟢 模拟在线 {online_time//60} 分钟")
+        
+        await asyncio.sleep(online_time)
+
+        # 离线
+        offline_time = random.randint(120, 360)  # 2-6分钟
+
+        try:
+            await client.send_message("me", f"😴 模拟离线 {offline_time//60} 分钟")
+        except:
+            pass
+
+        print(f"🔴 模拟离线 {offline_time//60} 分钟")
+
+        try:
+            await client.disconnect()
+            await asyncio.sleep(offline_time)
+            await client.start()
+        except Exception as e:
+            print("重新连接失败:", e)
+
 
 # ========= GitHub自动更新 =========
 async def github_auto_update():
+
+    if not os.path.isdir(".git"):
+        return
 
     while True:
 
@@ -255,7 +311,10 @@ async def forward_message(event,text):
 内容：{text}{remark}
 """
 
-        await asyncio.sleep(0.5)
+        await asyncio.sleep(random.uniform(1,3))
+
+        typing_delay=random.uniform(0.5,2)
+        await asyncio.sleep(typing_delay)
 
         await client.send_message(
             FORWARD_CHAT_ID,
@@ -278,7 +337,11 @@ async def forward_message(event,text):
 @client.on(events.NewMessage)
 async def handler(event):
 
-    await asyncio.sleep(0.2)
+    # 夜间休眠
+    if is_sleep_time():
+        return
+
+    await asyncio.sleep(random.uniform(1,4))
 
     global message_counter
 
@@ -357,15 +420,20 @@ async def heartbeat():
 
         uptime = int(time.time() - start_time)
 
+        if is_sleep_time():
+            status = "🌙 夜间休眠"
+        else:
+            status = "🟢 运行中"
+
         msg = f"""
 💓 心跳检测
 
-状态：运行中
+状态：{status}
 监听消息：{message_counter}
 转发消息：{forward_counter}
 运行时间：{uptime//3600}小时
 """
-
+            
         try:
             await client.send_message("me", msg)
         except Exception as e:
@@ -394,6 +462,7 @@ async def main():
             client.loop.create_task(daily_report())
             client.loop.create_task(heartbeat())
             client.loop.create_task(github_auto_update())
+            client.loop.create_task(simulate_human_offline())
 
             await client.run_until_disconnected()
 
