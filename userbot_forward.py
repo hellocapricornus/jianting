@@ -211,7 +211,7 @@ async def simulate_human_offline():
         await asyncio.sleep(online_time)
 
         # 离线
-        offline_time = random.randint(120, 360)  # 2-6分钟
+        offline_time = random.randint(60, 480)  # 1-8分钟
 
         try:
             await client.send_message("me", f"😴 模拟离线 {offline_time//60} 分钟")
@@ -438,7 +438,7 @@ async def heartbeat():
         except Exception as e:
             print("心跳发送失败:", e)
 
-        await asyncio.sleep(600)
+        await asyncio.sleep(1800)
 
 # ========= 启动 =========
 heartbeat_task = None  # 全局
