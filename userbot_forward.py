@@ -1,5 +1,6 @@
 from telethon import TelegramClient, events
 from telethon.errors import ChatRestrictedError, FloodWaitError
+from telethon.network.connection.tcpabridged import ConnectionTcpAbridged
 from telethon.utils import get_display_name
 import re
 import time
@@ -10,6 +11,7 @@ import os
 import subprocess
 import sys
 import random
+from telethon import functions
 
 API_ID = 27101904
 API_HASH = "770feb4049c8763f3946bb1aa2e54a86"
@@ -41,7 +43,7 @@ COUNTRIES = {
 "日本","约旦","哈萨克斯坦","韩国","科威特","老挝","马来西亚","马尔代夫",
 "蒙古","摩洛哥","缅甸","尼泊尔","荷兰","新西兰","尼日利亚","挪威",
 "巴基斯坦","菲律宾","波兰","葡萄牙","卡塔尔","罗马尼亚","俄罗斯",
-"沙特阿拉伯","新加坡","南非","韩国","西班牙","瑞典","瑞士","叙利亚",
+"沙特阿拉伯","新加坡","南非","西班牙","瑞典","瑞士","叙利亚",
 "泰国","土耳其","乌克兰","英国","美国","越南"
 }
 
@@ -85,7 +87,15 @@ message_counter = 0
 forward_counter = 0
 start_time = time.time()
 
-client = TelegramClient("userbot_session", API_ID, API_HASH)
+client = TelegramClient(
+    "userbot_session",
+    API_ID,
+    API_HASH,
+    connection=ConnectionTcpAbridged,
+    auto_reconnect=True,
+    retry_delay=5,
+    request_retries=10
+)
 
 # ========= 工具 =========
 # ========= 夜间休眠判断（北京时间） =========
@@ -104,13 +114,24 @@ def is_sleep_time():
     else:
         # 跨午夜情况，比如 23 ~ 8 点
         return bj_hour >= SLEEP_START or bj_hour < SLEEP_END
-    
+
 def safe_markdown(text):
     if not text:
         return ""
-    text = text.replace("[","【").replace("]","】")
-    text = text.replace("(","（").replace(")","）")
-    text = text.replace("`","")
+
+    replace_map = {
+        "[":"【",
+        "]":"】",
+        "(":"（",
+        ")":"）",
+        "`":"",
+        "_":"-",
+        "*":"·"
+    }
+
+    for k,v in replace_map.items():
+        text = text.replace(k,v)
+
     return text
 
 def normalize_text(text):
@@ -207,11 +228,11 @@ async def simulate_human_offline():
         # 在线一段时间
         online_time = random.randint(1800, 5400)  # 30-90分钟
         print(f"🟢 模拟在线 {online_time//60} 分钟")
-        
+
         await asyncio.sleep(online_time)
 
         # 离线
-        offline_time = random.randint(60, 480)  # 1-8分钟
+        offline_time = random.randint(120, 360)  # 2-6分钟
 
         try:
             await client.send_message("me", f"😴 模拟离线 {offline_time//60} 分钟")
@@ -221,9 +242,8 @@ async def simulate_human_offline():
         print(f"🔴 模拟离线 {offline_time//60} 分钟")
 
         try:
-            await client.disconnect()
+            await client(functions.account.UpdateStatusRequest(offline=True))
             await asyncio.sleep(offline_time)
-            await client.start()
         except Exception as e:
             print("重新连接失败:", e)
 
@@ -240,7 +260,12 @@ async def github_auto_update():
 
             print("🔍 检查GitHub更新")
 
-            subprocess.run(["git","fetch","origin"], stdout=subprocess.PIPE)
+            subprocess.run(
+                ["git","fetch","origin"],
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                timeout=30
+            )
 
             local = subprocess.check_output(
                 ["git","rev-parse","HEAD"]
@@ -275,7 +300,6 @@ async def github_auto_update():
 async def forward_message(event,text):
 
     global forward_counter
-    forward_counter += 1
 
     try:
 
@@ -323,6 +347,8 @@ async def forward_message(event,text):
             link_preview=False
         )
 
+        forward_counter += 1
+
     except ChatRestrictedError:
         print("⚠️ 频道禁止发消息")
 
@@ -340,7 +366,7 @@ async def handler(event):
     if is_sleep_time():
         return
 
-    await asyncio.sleep(random.uniform(1, 4))
+    await asyncio.sleep(random.uniform(0.5, 3.5))
 
     global message_counter
 
@@ -357,7 +383,7 @@ async def handler(event):
             return
 
         message_counter += 1
-        if message_counter % 100 == 0:
+        if len(debounce_cache) > 2000:
             clean_cache()
 
         # —— 高效过滤：先屏蔽广告与垃圾信息 —— #
@@ -432,7 +458,7 @@ async def heartbeat():
 转发消息：{forward_counter}
 运行时间：{uptime//3600}小时
 """
-            
+
         try:
             await client.send_message("me", msg)
         except Exception as e:
@@ -442,6 +468,9 @@ async def heartbeat():
 
 # ========= 启动 =========
 heartbeat_task = None  # 全局
+daily_task = None
+update_task = None
+offline_task = None
 
 async def main():
     global heartbeat_task
@@ -458,9 +487,16 @@ async def main():
                 heartbeat_task = client.loop.create_task(heartbeat())
 
             # 其他任务
-            client.loop.create_task(daily_report())
-            client.loop.create_task(github_auto_update())
-            client.loop.create_task(simulate_human_offline())
+            global daily_task, update_task, offline_task
+
+            if daily_task is None or daily_task.done():
+                daily_task = client.loop.create_task(daily_report())
+
+            if update_task is None or update_task.done():
+                update_task = client.loop.create_task(github_auto_update())
+
+            if offline_task is None or offline_task.done():
+                offline_task = client.loop.create_task(simulate_human_offline())
 
             await client.run_until_disconnected()
 
