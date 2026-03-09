@@ -198,7 +198,7 @@ async def mark_user(event):
         return
 
     uid,remark=event.pattern_match.groups()
-    marked_users[uid]=remark
+    marked_users[str(uid)] = remark  # ✅ 统一用 str 类型存储
     save_marked()
 
     await event.reply(f"✅ 标记成功\n{uid} → {remark}")
@@ -217,84 +217,68 @@ async def unmark_user(event):
         await event.reply("❌ 已删除")
 
 # ========= 模拟真人离线 =========
+
 async def simulate_human_offline():
-
     while True:
-
-        if is_sleep_time():
-            await asyncio.sleep(600)
-            continue
-
-        # 在线一段时间
-        online_time = random.randint(1800, 5400)  # 30-90分钟
-        print(f"🟢 模拟在线 {online_time//60} 分钟")
-
-        await asyncio.sleep(online_time)
-
-        # 离线
-        offline_time = random.randint(120, 360)  # 2-6分钟
-
         try:
-            await client.send_message("me", f"😴 模拟离线 {offline_time//60} 分钟")
-        except:
-            pass
+            if is_sleep_time():
+                await asyncio.sleep(600)
+                continue
 
-        print(f"🔴 模拟离线 {offline_time//60} 分钟")
+            online_time = random.randint(1800, 5400)
+            print(f"🟢 模拟在线 {online_time // 60} 分钟")
+            # ✅ 修复：恢复在线状态
+            await client(functions.account.UpdateStatusRequest(offline=False))
+            await asyncio.sleep(online_time)
 
-        try:
+            offline_time = random.randint(120, 360)
+            print(f"🔴 模拟离线 {offline_time // 60} 分钟")
+
             await client(functions.account.UpdateStatusRequest(offline=True))
             await asyncio.sleep(offline_time)
+
+            # ✅ 修复：离线结束后恢复在线
+            await client(functions.account.UpdateStatusRequest(offline=False))
+
         except Exception as e:
-            print("重新连接失败:", e)
+            print(f"simulate_human_offline 异常: {e}")
+            await asyncio.sleep(60)
 
 
 # ========= GitHub自动更新 =========
 async def github_auto_update():
-
     if not os.path.isdir(".git"):
         return
 
     while True:
-
         try:
+            print("🔍 检查 GitHub 更新")
 
-            print("🔍 检查GitHub更新")
+            subprocess.run(["git", "fetch", "origin"],
+                            stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=30)
 
-            subprocess.run(
-                ["git","fetch","origin"],
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-                timeout=30
-            )
+            local = subprocess.check_output(["git", "rev-parse", "HEAD"]).decode().strip()
 
-            local = subprocess.check_output(
-                ["git","rev-parse","HEAD"]
+            # ✅ 修复：动态获取当前分支名，避免硬编码 main
+            branch = subprocess.check_output(
+                ["git", "rev-parse", "--abbrev-ref", "HEAD"]
             ).decode().strip()
 
             remote = subprocess.check_output(
-                ["git","rev-parse","origin/main"]
+                ["git", "rev-parse", f"origin/{branch}"]
             ).decode().strip()
 
             if local != remote:
-
-                await client.send_message(
-                    "me",
-                    "🚀 GitHub发现新版本\n开始自动更新"
-                )
-
+                await client.send_message("me", "🚀 GitHub 发现新版本\n开始自动更新")
                 print("🚀 发现新版本，自动更新")
-
-                subprocess.run(["git","pull"], check=True)
-
+                subprocess.run(["git", "pull"], check=True)
                 print("♻️ 重启程序")
-
-                os.execv(sys.executable,[sys.executable]+sys.argv)
+                os.execv(sys.executable, [sys.executable] + sys.argv)
 
         except Exception as e:
+            print(f"GitHub 更新检查失败: {e}")
 
-            print("GitHub更新检查失败:",e)
-
-        await asyncio.sleep(3600)  # 1小时
+        await asyncio.sleep(3600)
 
 # ========= 转发 =========
 async def forward_message(event,text):
@@ -319,6 +303,8 @@ async def forward_message(event,text):
 
         sender_name = safe_markdown(get_display_name(sender))
 
+        sender_username = getattr(sender, "username", None)
+
         if sender.username:
             sender_text=f"[{sender_name}](https://t.me/{sender.username})"
         else:
@@ -336,9 +322,6 @@ async def forward_message(event,text):
 """
 
         await asyncio.sleep(random.uniform(1,3))
-
-        typing_delay=random.uniform(0.5,2)
-        await asyncio.sleep(typing_delay)
 
         await client.send_message(
             FORWARD_CHAT_ID,
@@ -365,8 +348,6 @@ async def handler(event):
     """主监听：优化过滤顺序，白名单优先转发"""
     if is_sleep_time():
         return
-
-    await asyncio.sleep(random.uniform(0.5, 3.5))
 
     global message_counter
 
@@ -420,21 +401,19 @@ async def daily_report():
     global message_counter, forward_counter, start_time
 
     while True:
-
-        await asyncio.sleep(86400)
-
-        uptime = int(time.time() - start_time)
-
-        report = f"""
-📊 机器人运行报告
-
-监听消息数：{message_counter}
-转发消息数：{forward_counter}
-
-运行时间：{uptime//3600}小时
-"""
-
-        await client.send_message("me", report)
+        try:
+            await asyncio.sleep(86400)
+            uptime = int(time.time() - start_time)
+            report = (
+                f"📊 机器人运行报告\n\n"
+                f"监听消息数：{message_counter}\n"
+                f"转发消息数：{forward_counter}\n"
+                f"运行时间：{uptime // 3600} 小时"
+            )
+            # ✅ 修复：加 try/except，发送失败不影响下次日报
+            await client.send_message("me", report)
+        except Exception as e:
+            print(f"daily_report 异常: {e}")
 
 # ========= 心跳 =========
 async def heartbeat():
