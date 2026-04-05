@@ -464,9 +464,9 @@ async def forward_message(event, text):
         
         # 发信人显示
         if sender.username:
-            sender_text = f"@{sender.username} (ID: {sender.id})"
+            sender_text = f"{sender_name} (@{sender.username})"
         else:
-            sender_text = f"{sender_name} (ID: {sender.id})"
+            sender_text = f"{sender_name}"
         
         # 标记信息
         remark = ""
