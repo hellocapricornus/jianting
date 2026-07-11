@@ -1072,40 +1072,47 @@ def _save_config_field(field_name, value):
     with open("config.json", "w", encoding="utf-8") as f:
         json.dump(config_data, f, ensure_ascii=False, indent=2)
 
-@client.on(events.NewMessage(pattern=r'^/add_blacklist (\w+)$'))
+@client.on(events.NewMessage(pattern=r'^/add_blacklist (@?\w+)$'))
 async def add_blacklist(event):
-    """添加转发黑名单用户（仅自己可用）"""
+    """添加转发黑名单用户（仅自己可用，支持 @用户名 或 纯数字ID）"""
     if not event.is_private or not is_owner(event):
         return
     
-    username = event.pattern_match.group(1)
-    username_lower = username.lower()
+    raw = event.pattern_match.group(1)
+    entry = raw.lstrip("@")  # 统一去掉 @ 前缀
+    entry_lower = entry.lower()
     
-    if any(u.lower() == username_lower for u in config.FORWARD_BLACKLIST_USERS):
-        await event.reply(f"⚠️ @{username} 已在黑名单中")
+    if any(u.lstrip("@").lower() == entry_lower for u in config.FORWARD_BLACKLIST_USERS):
+        await event.reply(f"⚠️ {raw} 已在黑名单中")
         return
     
-    config.FORWARD_BLACKLIST_USERS.append(username)
+    config.FORWARD_BLACKLIST_USERS.append(entry)
     _save_config_field("forward_blacklist_users", config.FORWARD_BLACKLIST_USERS)
-    await event.reply(f"✅ 已添加黑名单用户 @{username}\n该用户发送的消息将不再转发")
+    
+    kind = "数字ID" if entry.isdigit() else "用户名"
+    await event.reply(
+        f"✅ 已添加黑名单（{kind}）：{entry}\n"
+        f"该用户发送的消息将不再转发"
+    )
 
-@client.on(events.NewMessage(pattern=r'^/remove_blacklist (\w+)$'))
+@client.on(events.NewMessage(pattern=r'^/remove_blacklist (@?\w+)$'))
 async def remove_blacklist(event):
     """删除转发黑名单用户（仅自己可用）"""
     if not event.is_private or not is_owner(event):
         return
     
-    username = event.pattern_match.group(1)
-    username_lower = username.lower()
+    raw = event.pattern_match.group(1)
+    entry = raw.lstrip("@")
+    entry_lower = entry.lower()
     
     for i, u in enumerate(config.FORWARD_BLACKLIST_USERS):
-        if u.lower() == username_lower:
+        if u.lstrip("@").lower() == entry_lower:
             del config.FORWARD_BLACKLIST_USERS[i]
             _save_config_field("forward_blacklist_users", config.FORWARD_BLACKLIST_USERS)
-            await event.reply(f"✅ 已从黑名单移除 @{username}")
+            await event.reply(f"✅ 已从黑名单移除 {raw}")
             return
     
-    await event.reply(f"⚠️ @{username} 不在黑名单中")
+    await event.reply(f"⚠️ {raw} 不在黑名单中")
 
 @client.on(events.NewMessage(pattern=r'^/list_blacklist$'))
 async def list_blacklist(event):
@@ -1147,8 +1154,8 @@ async def show_help(event):
 • `/list_mention` - 查看当前@用户列表
 
 **🚫 转发黑名单命令：**
-• `/add_blacklist <用户名>` - 添加转发黑名单用户
-• `/remove_blacklist <用户名>` - 删除转发黑名单用户
+• `/add_blacklist <用户名或ID>` - 添加转发黑名单（支持 @用户名 或 纯数字ID）
+• `/remove_blacklist <用户名或ID>` - 删除转发黑名单用户
 • `/list_blacklist` - 查看转发黑名单列表
 
 """
@@ -1185,9 +1192,23 @@ async def handler(event):
                 logger.info("配置已热重载")
         
         # 转发黑名单用户：优先级最高，直接跳过
+        # 支持用户名（@xxx 或 xxx）和数字 ID 两种形式
         sender = await event.get_sender()
-        if sender and sender.username and sender.username.lower() in {u.lower() for u in config.FORWARD_BLACKLIST_USERS}:
-            return
+        if sender:
+            sender_username = (sender.username or "").lower()
+            sender_id_str = str(sender.id)
+            for entry in config.FORWARD_BLACKLIST_USERS:
+                entry_clean = entry.lstrip("@").lower()
+                if not entry_clean:
+                    continue
+                # 匹配用户名
+                if entry_clean == sender_username and sender_username:
+                    logger.info(f"🚫 黑名单拦截（用户名）: @{sender_username} (id={sender_id_str})")
+                    return
+                # 匹配数字 ID
+                if entry_clean.isdigit() and entry_clean == sender_id_str:
+                    logger.info(f"🚫 黑名单拦截（ID）: id={sender_id_str} (@{sender_username or '无用户名'})")
+                    return
         
         # 白名单优先级最高：避免被宽泛的屏蔽词误伤
         # （例如 "银行卡号后四位" 会被 "银行" 误屏蔽）
